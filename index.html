@@ -593,7 +593,6 @@ select{
 </div>
 
 <script>
-
 /*==========================================================
     VARIÁVEIS GLOBAIS
 ==========================================================*/
@@ -640,11 +639,13 @@ function togglePainelConfig(abrir) {
     REQUISIÇÕES DE CONFIGURAÇÃO PARA O ESP32 
 ==========================================================*/
 function getBaseUrl() {
+    // Se estiver rodando no GitHub Pages ou localmente sem host, aponta para o ESP32
     if (location.hostname.includes("github.io") || !location.hostname) {
-        return "http://green.local";
+        return "http://green.local"; 
     }
     return "";
 }
+
 function carregarValoresConfig() {
     fetch(getBaseUrl() + "/getConfig")
     .then(r => r.json())
@@ -670,7 +671,7 @@ function fazerUploadHtml() {
     formData.append("data", arquivo, "/" + arquivo.name);
 
     alert("Enviando arquivo remoto... Aguarde confirmação.");
-    fetch("/upload", { method: "POST", body: formData })
+    fetch(getBaseUrl() + "/upload", { method: "POST", body: formData })
     .then(r => r.text())
     .then(txt => {
         alert("Upload concluído: " + txt);
@@ -681,14 +682,14 @@ function fazerUploadHtml() {
 function salvarNomeHtmlPadrao() {
     const nome = document.getElementById("htmlPadraoNome").value;
     if(!nome) return;
-    fetch(`/setHtmlPadrao?nome=${nome}`)
+    fetch(getBaseUrl() + `/setHtmlPadrao?nome=${nome}`)
     .then(r => r.text())
     .then(alert);
 }
 
 function salvarCalibracao() {
     const cal = document.getElementById("calValor").value;
-    fetch(`/setCal?valor=${cal}`)
+    fetch(getBaseUrl() + `/setCal?valor=${cal}`)
     .then(r => r.text())
     .then(alert);
 }
@@ -699,7 +700,7 @@ function salvarFatoresCorrecao() {
     const a_iac = document.getElementById("coefA_IAC_Input").value;
     const b_iac = document.getElementById("coefB_IAC_Input").value;
     
-    fetch(`/setCorrecao?a_vac=${a_vac}&b_vac=${b_vac}&a_iac=${a_iac}&b_iac=${b_iac}`)
+    fetch(getBaseUrl() + `/setCorrecao?a_vac=${a_vac}&b_vac=${b_vac}&a_iac=${a_iac}&b_iac=${b_iac}`)
     .then(r => r.text())
     .then(alert);
 }
@@ -1010,8 +1011,6 @@ function adicionarPonto(v, i, p, S){
 }
 
 function conectarWS(){
-    // Se o site for acessado no GitHub Pages ou outro domínio, conecta via mDNS (green.local:81)
-    // Se for acessado direto pelo IP/hostname local do ESP32, usa o endereço atual
     let hostWs = location.hostname ? location.hostname : "green.local";
     if (hostWs.includes("github.io") || hostWs === "") {
         hostWs = "green.local";
@@ -1064,8 +1063,6 @@ function conectarWS(){
     };
 }
 
-
-
 /*==========================================================
     INICIALIZAÇÃO
 ==========================================================*/
@@ -1079,46 +1076,46 @@ conectarWS();
 
 function toggleRec(){
     if(!wsConectado) return; 
+    let rota = !gravando ? "/start" : "/stop";
     
-    if(!gravando){
-        fetch("/start")
-        .then(r=>r.text())
-        .then(function(){
-            gravando=true;
+    fetch(getBaseUrl() + rota)
+    .then(r => r.text())
+    .then(function(){
+        gravando = !gravando;
+        if(gravando){
             document.getElementById("recBtn").innerHTML="Parar Gravação";
             document.getElementById("recBtn").className="stop";
             document.getElementById("recStatus").innerHTML="🔴 REC";
             document.getElementById("recStatus").className="status rec";
-            atualizarArquivos();
-        }).catch(err => console.log("Erro ao iniciar gravação"));
-    }
-    else{
-        fetch("/stop")
-        .then(r=>r.text())
-        .then(function(){
-            gravando=false;
+        } else {
             document.getElementById("recBtn").innerHTML="Iniciar Gravação";
             document.getElementById("recBtn").className="start";
             document.getElementById("recStatus").innerHTML="⚪ Parado";
             document.getElementById("recStatus").className="status";
-            atualizarArquivos();
-        }).catch(err => console.log("Erro ao parar gravação"));
-    }
+        }
+        atualizarArquivos();
+    }).catch(err => console.log("Erro ao alternar gravação", err));
 }
 
 function formatarSPIFFS(){
     if(!wsConectado) return;
     if(!confirm("Deseja realmente formatar o SPIFFS?")) return;
-    fetch("/formatar").then(r=>r.text()).then(alert);
+    fetch(getBaseUrl() + "/formatar").then(r=>r.text()).then(alert);
 }
 
 function atualizarArquivos(){
-    fetch("/folder?name=/")
-        .then(r => r.text())
+    fetch(getBaseUrl() + "/folder?name=/")
+        .then(r => {
+            if (!r.ok) throw new Error("HTTP 404");
+            return r.text();
+        })
         .then(function(html){
             document.getElementById("arquivos").innerHTML = html;
         })
-        .catch(err => console.error("Erro ao carregar arquivos:", err));
+        .catch(err => {
+            console.error("Erro ao carregar arquivos:", err);
+            document.getElementById("arquivos").innerHTML = "<p style='color:#ff4444; font-size:12px;'>Dispositivo Offline</p>";
+        });
 }
 
 function atualizarRelogio(){
@@ -1134,7 +1131,7 @@ atualizarRelogio();
 function atualizarStatus(){
     if(!wsConectado) return; 
     
-    fetch("/status")
+    fetch(getBaseUrl() + "/status")
     .then(r=>r.json())
     .then(function(obj){
         if(obj.wifi){
@@ -1158,7 +1155,7 @@ function atualizarStatus(){
 
 function atualizarSPIFFS(){
     if(!wsConectado) return; 
-    fetch("/spiffs")
+    fetch(getBaseUrl() + "/spiffs")
     .then(r=>r.json())
     .then(function(obj){
         document.getElementById("spiffs").innerHTML= "SPIFFS<br>"+obj.livre.toFixed(2)+" MB livres";
@@ -1166,9 +1163,7 @@ function atualizarSPIFFS(){
 }
 
 setInterval(atualizarStatus,3000);
-setInterval(atualizarSPIFFS,5000);
-
-</script>
+setInterval(atualizarSPIFFS,5000);</script>
 
 </body>
 </html>
