@@ -1113,12 +1113,12 @@ function formatarSPIFFS(){
 }
 
 function atualizarArquivos(){
-    if(!wsConectado) return; 
     fetch("/folder?name=/")
-    .then(r=>r.text())
-    .then(function(html){
-        document.getElementById("arquivos").innerHTML=html;
-    }).catch(err => {});
+        .then(r => r.text())
+        .then(function(html){
+            document.getElementById("arquivos").innerHTML = html;
+        })
+        .catch(err => console.error("Erro ao carregar arquivos:", err));
 }
 
 function atualizarRelogio(){
