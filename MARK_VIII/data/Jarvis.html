@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+<title>Monitor ESP32 - PET Elétrica</title>
+
+<!-- O Chart.js é carregado pelo script lá embaixo (primeiro do ESP, depois da internet),
+     assim a página também funciona na rede do ESP, sem internet. -->
+
+<style>
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+body{
+    font-family:Arial,Helvetica,sans-serif;
+    background:#121212;
+    color:white;
+    display:flex;
+    height:100vh;
+    overflow:hidden;
+}
+
+/* SIDEBAR */
+.sidebar{
+    width:260px;
+    background:#1d1d1d;
+    border-right:2px solid #333;
+    padding:20px;
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    flex-shrink:0;
+}
+
+.sidebar-topo{ width:100%; }
+.sidebar h2{ margin-bottom:20px; }
+#arquivos{ margin-bottom:20px; }
+
+.file{
+    background:#292929;
+    margin-bottom:10px;
+    padding:10px;
+    border-radius:8px;
+    transition:.2s;
+    border-left:4px solid #4CAF50;
+    word-break:break-all;
+}
+
+.file:hover{
+    background:#353535;
+    transform:translateX(4px);
+}
+
+.file a{
+    color:white;
+    text-decoration:none;
+}
+
+.sidebar button{ width:100%; }
+
+/* MAIN */
+.main{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    padding:20px;
+    height:100%;
+    overflow:hidden;
+    min-width:0;
+}
+
+.topo{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    flex-shrink:0;
+}
+
+.titulo h1{ margin-bottom:8px; }
+
+.statusLinha{
+    display:flex;
+    gap:18px;
+    flex-wrap:wrap;
+    margin-top:5px;
+    margin-bottom:15px;
+}
+
+.status{ font-weight:bold; }
+.online{ color:#4CAF50; }
+.offline{ color:#ff4444; }
+
+.rec{
+    color:#ff3333;
+    animation:piscar 1s infinite;
+}
+
+@keyframes piscar{ 50%{ opacity:.25; } }
+
+.endereco{
+    color:#9aa0a6;
+    cursor:pointer;
+    font-weight:normal;
+    font-size:14px;
+    align-self:center;
+}
+.endereco:hover{ color:white; }
+
+.infoSuperior{
+    text-align:right;
+    line-height:1.6;
+    font-size:15px;
+}
+
+#fpContainer{
+    font-weight:bold;
+    color:#ff9900;
+}
+
+#valores{
+    font-size:18px;
+    font-weight:bold;
+}
+
+.consumoLinha{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin-top:6px;
+    flex-wrap:wrap;
+}
+
+#consumoDisplay{
+    font-size:18px;
+    font-weight:bold;
+    color:#a855f7;
+}
+
+.btn-reset-consumo{
+    background:#a855f7;
+    color:white;
+    font-size:11px;
+    padding:4px 10px;
+    border-radius:6px;
+    border:none;
+    cursor:pointer;
+    font-weight:bold;
+    transition:.2s;
+}
+
+.btn-reset-consumo:hover{
+    background:#9333ea;
+    transform:scale(1.05);
+}
+
+/* AVISO (conexão / Chart.js) */
+#aviso{
+    display:none;
+    flex-shrink:0;
+    margin-top:12px;
+    padding:10px 14px;
+    border-radius:8px;
+    font-size:14px;
+    line-height:1.4;
+    background:#3a2f12;
+    border:1px solid #8a6d1d;
+    color:#ffd77a;
+}
+#aviso.info{
+    background:#13283a;
+    border-color:#1d5a8a;
+    color:#8fd0ff;
+}
+#aviso.erro{
+    background:#3a1515;
+    border-color:#8a1d1d;
+    color:#ff9a9a;
+}
+
+.controles{
+    display:flex;
+    align-items:center;
+    gap:15px;
+    flex-wrap:wrap;
+    margin-top:15px;
+    margin-bottom:15px;
+    flex-shrink:0;
+}
+
+button{
+    border:none;
+    border-radius:8px;
+    padding:12px 18px;
+    cursor:pointer;
+    font-weight:bold;
+    transition:.2s;
+}
+
+button:hover{ transform:scale(1.03); }
+
+.start{ background:#4CAF50; color:white; }
+.stop{ background:#E53935; color:white; }
+.format{ background:#FF9800; color:white; }
+.clear{ background:#666; color:white; }
+
+select{
+    background:#2d2d2d;
+    color:white;
+    border:1px solid #555;
+    border-radius:6px;
+    padding:8px;
+}
+
+/* ÁREA DOS GRÁFICOS */
+#graficos{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    width:100%;
+    position:relative;
+    overflow:hidden;
+    min-height:0;
+    box-sizing:border-box;
+}
+
+/* O "display" de cada modo é definido pelo JavaScript (mostrarModo) */
+.modo-wrapper{
+    display:none;
+    width:100%;
+    height:100%;
+    max-height:100%;
+    min-height:0;
+    box-sizing:border-box;
+}
+
+.chart-container{
+    position:relative;
+    width:100%;
+    height:100%;
+    background:white;
+    border-radius:10px;
+    padding:10px;
+    min-height:0;
+    overflow:hidden;
+    box-sizing:border-box;
+}
+
+.chart-container canvas{
+    width:100% !important;
+    height:100% !important;
+    display:block;
+}
+
+#modo1, #modo5{
+    width:100%;
+    height:100%;
+}
+
+#modo2{
+    grid-template-columns:1fr;
+    grid-template-rows:repeat(4, minmax(0, 1fr));
+    gap:12px;
+}
+
+#modo3{
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:repeat(2, minmax(0, 1fr));
+    gap:12px;
+}
+
+#modo4{
+    grid-template-columns:repeat(4, 1fr);
+    grid-template-rows:1fr;
+    gap:12px;
+}
+
+/* CELULAR / TELA PEQUENA */
+@media (max-width: 900px){
+    body{
+        flex-direction:column;
+        height:auto;
+        min-height:100vh;
+        overflow-y:auto;
+    }
+    .sidebar{
+        width:100%;
+        max-height:220px;
+        border-right:none;
+        border-bottom:2px solid #333;
+    }
+    .main{
+        height:auto;
+        overflow:visible;
+    }
+    .topo{
+        flex-direction:column;
+        gap:12px;
+    }
+    .infoSuperior{ text-align:left; }
+    #graficos{
+        flex:none;
+        overflow:visible;
+        height:auto;
+        max-height:none;
+    }
+    .modo-wrapper{
+        height:auto;
+        max-height:none;
+    }
+    #modo1, #modo5{ height:320px; }
+    #modo2, #modo3, #modo4{
+        grid-template-columns:1fr !important;
+        grid-template-rows:repeat(4, 260px) !important;
+    }
+    #modo5{ height:320px; }
+    .painel-config{ width:100%; right:-100%; }
+    .btn-config{ top:10px; right:10px; }
+}
+
+/* CONFIGS - PAINEL FLUTUANTE */
+.btn-config{
+    background:#2d2d2d;
+    color:white;
+    font-size:24px;
+    padding:10px 15px;
+    border-radius:8px;
+    cursor:pointer;
+    border:1px solid #444;
+    transition:.2s;
+    position:fixed;
+    top:20px;
+    right:20px;
+    z-index:1000;
+}
+
+.btn-config:hover{
+    background:#444;
+    transform:scale(1.05);
+}
+
+.painel-config{
+    position:fixed;
+    top:0;
+    right:-350px;
+    width:350px;
+    height:100vh;
+    background:#1a1a1a;
+    border-left:2px solid #333;
+    box-shadow:-5px 0 15px rgba(0,0,0,0.5);
+    transition:0.3s ease-in-out;
+    z-index:1001;
+    padding:25px;
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+    overflow-y:auto;
+    color:white;
+    font-family:Arial, sans-serif;
+}
+
+.painel-config.aberto{ right:0; }
+
+.painel-config h2{
+    border-bottom:1px solid #333;
+    padding-bottom:10px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:20px;
+}
+
+.btn-fechar{
+    background:none;
+    border:none;
+    color:#ff4444;
+    font-size:20px;
+    cursor:pointer;
+}
+
+.secao-config{
+    background:#252525;
+    padding:15px;
+    border-radius:8px;
+    border:1px solid #333;
+    flex-shrink:0;
+}
+
+.secao-config h3{
+    font-size:14px;
+    color:#4CAF50;
+    margin-bottom:10px;
+    text-transform:uppercase;
+}
+
+.secao-config h4{
+    font-size:13px;
+    color:#0094ff;
+    margin-top:10px;
+    margin-bottom:5px;
+}
+
+.secao-config label{
+    display:block;
+    font-size:13px;
+    margin-top:8px;
+    margin-bottom:4px;
+}
+
+.secao-config input[type="number"],
+.secao-config input[type="text"],
+.secao-config select{
+    width:100%;
+    background:#121212;
+    border:1px solid #444;
+    color:white;
+    padding:8px;
+    border-radius:6px;
+    margin-bottom:10px;
+    box-sizing:border-box;
+}
+
+.secao-config input[type="file"]{
+    width:100%;
+    font-size:12px;
+    margin-bottom:6px;
+}
+
+.dica{
+    font-size:12px;
+    color:#9aa0a6;
+    line-height:1.4;
+    margin-bottom:8px;
+}
+
+.btn-salvar{
+    background:#4CAF50;
+    color:white;
+    width:100%;
+    border:none;
+    padding:10px;
+    border-radius:6px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.btn-upload{
+    background:#0094ff;
+    color:white;
+    width:100%;
+    border:none;
+    padding:10px;
+    border-radius:6px;
+    font-weight:bold;
+    cursor:pointer;
+    margin-top:5px;
+}
+
+#infoRede{
+    margin-top:10px;
+    font-size:12px;
+    color:#9aa0a6;
+    line-height:1.5;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="sidebar">
+    <div class="sidebar-topo">
+        <h2>Arquivos</h2>
+        <div id="arquivos">
+            Carregando...
+        </div>
+    </div>
+    <button class="format" onclick="formatarSPIFFS()">
+        Formatar SPIFFS
+    </button>
+</div>
+
+<div class="main">
+    <button class="btn-config" onclick="togglePainelConfig(true)">☰</button>
+
+    <div class="topo">
+        <div class="titulo">
+            <h1>Monitor ESP32</h1>
+            <div class="statusLinha">
+                <div id="wifiStatus" class="status offline">🔴 Wi-Fi</div>
+                <div id="wsStatus" class="status offline">🔴 WebSocket</div>
+                <div id="recStatus" class="status">⚪ Parado</div>
+                <div id="espEndereco" class="status endereco" onclick="togglePainelConfig(true)" title="Clique para alterar o endereço do ESP">📡 procurando...</div>
+            </div>
+            <div id="valores">
+                V: --- | I: --- | P: --- | S: --- | FP: ---
+            </div>
+            <div class="consumoLinha">
+                <div id="consumoDisplay">
+                    Consumo Acumulado: --- kWh
+                </div>
+                <button class="btn-reset-consumo" onclick="resetarConsumoWeb()">🔄 Resetar</button>
+            </div>
+        </div>
+
+        <div class="infoSuperior">
+            <div id="relogio">
+                --/--/----<br>--:--:--
+            </div>
+            <br>
+            <div id="spiffs">
+                SPIFFS<br>---
+            </div>
+            <br>
+            <div id="fpContainer">
+                FP Instantâneo<br><span id="fpValor">---</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="aviso"></div>
+
+    <div class="controles">
+        <button id="recBtn" class="start" onclick="toggleRec()">
+            Iniciar Gravação
+        </button>
+
+        <label>Modo</label>
+        <select id="modoVisualizacao">
+            <option value="1">Gráfico Único</option>
+            <option value="2">Empilhados</option>
+            <option value="3">2 x 2</option>
+            <option value="4">Lado a lado</option>
+            <option value="5">Consumo (kWh)</option>
+        </select>
+
+        <label>Pontos</label>
+        <select id="maxPontos">
+            <option value="30">30</option>
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+        </select>
+
+        <button class="clear" onclick="limparGraficos()">
+            🗑 Limpar
+        </button>
+    </div>
+
+    <div id="graficos">
+        <div id="modo1" class="modo-wrapper">
+            <div class="chart-container">
+                <canvas id="graficoPrincipal"></canvas>
+            </div>
+        </div>
+
+        <div id="modo2" class="modo-wrapper">
+            <div class="chart-container"><canvas id="graficoPotencia"></canvas></div>
+            <div class="chart-container"><canvas id="graficoPotenciaAparente"></canvas></div>
+            <div class="chart-container"><canvas id="graficoCorrente"></canvas></div>
+            <div class="chart-container"><canvas id="graficoTensao"></canvas></div>
+        </div>
+
+        <div id="modo3" class="modo-wrapper">
+            <div class="chart-container"><canvas id="graficoTensao2"></canvas></div>
+            <div class="chart-container"><canvas id="graficoCorrente2"></canvas></div>
+            <div class="chart-container"><canvas id="graficoPotencia2"></canvas></div>
+            <div class="chart-container"><canvas id="graficoPotenciaAparente2"></canvas></div>
+        </div>
+
+        <div id="modo4" class="modo-wrapper">
+            <div class="chart-container"><canvas id="graficoTensao3"></canvas></div>
+            <div class="chart-container"><canvas id="graficoCorrente3"></canvas></div>
+            <div class="chart-container"><canvas id="graficoPotencia3"></canvas></div>
+            <div class="chart-container"><canvas id="graficoPotenciaAparente3"></canvas></div>
+        </div>
+
+        <div id="modo5" class="modo-wrapper">
+            <div class="chart-container">
+                <canvas id="graficoConsumo"></canvas>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- PAINEL DE CONFIGURAÇÕES FLUTUANTE -->
+<div id="painelConfig" class="painel-config">
+    <h2>Configurações <button class="btn-fechar" onclick="togglePainelConfig(false)">✕</button></h2>
+
+    <div class="secao-config">
+        <h3>Conexão com o ESP32</h3>
+        <label>Endereço (IP ou nome):</label>
+        <input type="text" id="hostInput" placeholder="Ex: green.local ou 192.168.4.1">
+        <button class="btn-salvar" onclick="salvarHostManual()">Salvar e reconectar</button>
+        <button class="btn-upload" onclick="buscarAutomatico()">Buscar automaticamente</button>
+        <div class="dica" style="margin-top:8px;">
+            A busca testa: o último endereço salvo, o endereço desta página, green.local e 192.168.4.1 (rede própria do ESP).
+        </div>
+        <div id="infoRede">---</div>
+    </div>
+
+    <div class="secao-config">
+        <h3>Upload Remoto</h3>
+        <label>Selecionar arquivo (.htm / .html / .js):</label>
+        <input type="file" id="arquivoHtmlInput" accept=".htm,.html,.js">
+        <button class="btn-upload" onclick="fazerUploadHtml()">Enviar Arquivo</button>
+        <div class="dica" style="margin-top:8px;">
+            Para os gráficos funcionarem sem internet, envie aqui o arquivo <b>chart.umd.min.js</b>
+            (baixe em cdn.jsdelivr.net/npm/chart.js e salve com esse nome).
+        </div>
+
+        <label>HTML Padrão de Leitura:</label>
+        <input type="text" id="htmlPadraoNome" value="Jarvis.html" placeholder="Ex: Jarvis.html">
+        <button class="btn-salvar" onclick="salvarNomeHtmlPadrao()">Definir Padrão</button>
+    </div>
+
+    <div class="secao-config">
+        <h3>Modo / Calibração (CAL)</h3>
+        <label>Valor de CAL:</label>
+        <select id="calValor">
+            <option value="0">0 - ADC bruto</option>
+            <option value="1">1 - Instantâneo (V e A)</option>
+            <option value="2">2 - RMS (Serial legível)</option>
+            <option value="3">3 - RMS (Serial FK)</option>
+        </select>
+        <div class="dica">Os gráficos e o consumo só funcionam nos modos 2 e 3.</div>
+        <button class="btn-salvar" onclick="salvarCalibracao()">Aplicar</button>
+    </div>
+
+    <div class="secao-config">
+        <h3>Fatores de Correção</h3>
+
+        <h4>Ajustes de Tensão (V)</h4>
+        <label>Coeficiente A (Ganho):</label>
+        <input type="number" id="coefA_VAC_Input" step="any">
+
+        <label>Coeficiente B (Offset):</label>
+        <input type="number" id="coefB_VAC_Input" step="any">
+
+        <hr style="border:0; border-top:1px solid #444; margin:15px 0;">
+
+        <h4>Ajustes de Corrente (I)</h4>
+        <label>Coeficiente A (Ganho):</label>
+        <input type="number" id="coefA_IAC_Input" step="any">
+
+        <label>Coeficiente B (Offset):</label>
+        <input type="number" id="coefB_IAC_Input" step="any">
+
+        <button class="btn-salvar" onclick="salvarFatoresCorrecao()">Salvar Coeficientes</button>
+    </div>
+</div>
+
+<script>
+
+/*==========================================================
+    ESTADO GLOBAL
+==========================================================*/
+
+let ws = null;
+let wsConectado = false;
+let gravando = false;
+
+let espHost = null;          // endereço do ESP que respondeu (ex: "green.local")
+let chartPronto = false;
+let conectando = false;
+let timerRetry = null;
+
+let modoAtual = 1;
+let limitePontos = 100;
+
+let charts = [];             // todos os gráficos Chart.js ativos
+
+const CHAVE_HOST = "espHost";
+const MB_POR_HORA_GRAVANDO = 0.36;   // estimativa para o tempo de gravação restante
+
+let dadosGrafico = {
+    labels: [],
+    tensao: [],
+    corrente: [],
+    potencia: [],
+    potenciaAparente: [],
+    consumo: []
+};
+
+const SERIES = {
+    potencia:         { nome: "Potência Ativa (W)",        cor: "#ff0000" },
+    potenciaAparente: { nome: "Potência Aparente (VA)",    cor: "#ff9900" },
+    corrente:         { nome: "Corrente (A)",              cor: "#0094ff" },
+    tensao:           { nome: "Tensão (V)",                cor: "#00cc44" },
+    consumo:          { nome: "Consumo Acumulado (kWh)",   cor: "#a855f7" }
+};
+
+// [id do canvas, série]
+const LAYOUTS = {
+    2: [["graficoPotencia", "potencia"], ["graficoPotenciaAparente", "potenciaAparente"], ["graficoCorrente", "corrente"], ["graficoTensao", "tensao"]],
+    3: [["graficoTensao2", "tensao"], ["graficoCorrente2", "corrente"], ["graficoPotencia2", "potencia"], ["graficoPotenciaAparente2", "potenciaAparente"]],
+    4: [["graficoTensao3", "tensao"], ["graficoCorrente3", "corrente"], ["graficoPotencia3", "potencia"], ["graficoPotenciaAparente3", "potenciaAparente"]],
+    5: [["graficoConsumo", "consumo"]]
+};
+
+const DISPLAY_MODO = { 1: "block", 2: "grid", 3: "grid", 4: "grid", 5: "block" };
+
+/*==========================================================
+    AVISOS NA TELA
+==========================================================*/
+
+function mostrarAviso(msg, tipo) {
+    const el = document.getElementById("aviso");
+    el.className = tipo || "";
+    el.innerHTML = msg;
+    el.style.display = "block";
+}
+
+function limparAviso() {
+    const el = document.getElementById("aviso");
+    el.style.display = "none";
+    el.innerHTML = "";
+}
+
+/*==========================================================
+    ENDEREÇO DO ESP32 (descoberta automática)
+==========================================================*/
+
+function lerHostSalvo() {
+    try { return localStorage.getItem(CHAVE_HOST) || ""; } catch (e) { return ""; }
+}
+
+function salvarHost(h) {
+    try { localStorage.setItem(CHAVE_HOST, h); } catch (e) {}
+}
+
+// "http://192.168.0.5:80/abc" -> "192.168.0.5"
+function normalizarHost(txt) {
+    return (txt || "").trim()
+        .replace(/^https?:\/\//i, "")
+        .replace(/^wss?:\/\//i, "")
+        .replace(/[\/:].*$/, "");
+}
+
+function candidatos() {
+    const lista = [];
+    const add = function (h) {
+        h = normalizarHost(h);
+        if (h && lista.indexOf(h) === -1) lista.push(h);
+    };
+
+    add(lerHostSalvo());
+
+    // Se esta página foi aberta pelo próprio ESP, o endereço dela é o do ESP
+    if (location.protocol === "http:" && location.hostname && location.hostname.indexOf("github.io") === -1) {
+        add(location.hostname);
+    }
+
+    add("green.local");
+    add("192.168.4.1");   // IP padrão da rede própria do ESP ("Medidor do PET")
+    return lista;
+}
+
+async function testarHost(h, timeoutMs) {
+    const ctrl = new AbortController();
+    const t = setTimeout(function () { ctrl.abort(); }, timeoutMs || 2500);
+    try {
+        const r = await fetch("http://" + h + "/status", { signal: ctrl.signal, cache: "no-store" });
+        if (!r.ok) return null;
+        const j = await r.json();
+        return (j && j.wifi !== undefined) ? j : null;
+    } catch (e) {
+        return null;
+    } finally {
+        clearTimeout(t);
+    }
+}
+
+async function descobrirESP() {
+    if (location.protocol === "https:") {
+        mostrarAviso("⚠️ Esta página foi aberta por <b>HTTPS</b> (ex: GitHub Pages). O navegador bloqueia a comunicação com o ESP32 (que usa HTTP). " +
+            "Abra o arquivo direto do computador (duplo clique) ou pelo endereço do próprio ESP.", "erro");
+        return null;
+    }
+
+    const lista = candidatos();
+    const resultados = await Promise.all(lista.map(function (h) { return testarHost(h); }));
+
+    for (let k = 0; k < lista.length; k++) {
+        if (resultados[k]) {
+            definirHost(lista[k], resultados[k]);
+            return lista[k];
+        }
+    }
+    return null;
+}
+
+function definirHost(h, status) {
+    espHost = h;
+    salvarHost(h);
+    document.getElementById("espEndereco").innerHTML = "📡 " + h;
+    atualizarInfoRede(status);
+}
+
+function atualizarInfoRede(s) {
+    let txt = "Conectado em: <b>" + (espHost || "---") + "</b>";
+    if (s) {
+        if (s.ip) txt += "<br>IP na rede do roteador: " + s.ip;
+        else if (s.sta === false) txt += "<br>Roteador: não conectado";
+        if (s.apIp) txt += "<br>IP da rede própria do ESP: " + s.apIp;
+    }
+    document.getElementById("infoRede").innerHTML = txt;
+}
+
+function api(path, opts, ms) {
+    if (!espHost) return Promise.reject(new Error("ESP32 não encontrado"));
+    const ctrl = new AbortController();
+    const t = setTimeout(function () { ctrl.abort(); }, ms || 8000);
+    const config = Object.assign({}, opts || {}, { signal: ctrl.signal, cache: "no-store" });
+    return fetch("http://" + espHost + path, config).finally(function () { clearTimeout(t); });
+}
+
+function enviarComando(path) {
+    api(path)
+        .then(function (r) { return r.text(); })
+        .then(function (txt) { alert(txt); })
+        .catch(function (e) { alert("Falha ao falar com o ESP32: " + e.message); });
+}
+
+/*==========================================================
+    CARREGAMENTO DO CHART.JS (ESP primeiro, internet depois)
+==========================================================*/
+
+function carregarScript(url, ms) {
+    return new Promise(function (resolve, reject) {
+        const s = document.createElement("script");
+        const t = setTimeout(function () { s.remove(); reject(new Error("timeout")); }, ms);
+        s.onload = function () { clearTimeout(t); resolve(); };
+        s.onerror = function () { clearTimeout(t); s.remove(); reject(new Error("erro")); };
+        s.src = url;
+        document.head.appendChild(s);
+    });
+}
+
+async function garantirChartJs() {
+    if (typeof Chart !== "undefined") return true;
+
+    const fontes = [];
+    if (espHost) fontes.push("http://" + espHost + "/download?file=chart.umd.min.js");
+    fontes.push("https://cdn.jsdelivr.net/npm/chart.js");
+
+    for (let k = 0; k < fontes.length; k++) {
+        try {
+            await carregarScript(fontes[k], 6000);
+            if (typeof Chart !== "undefined") return true;
+        } catch (e) {}
+    }
+    return false;
+}
+
+/*==========================================================
+    CONEXÃO (descoberta + Chart.js + WebSocket)
+==========================================================*/
+
+function agendarRetry(ms) {
+    clearTimeout(timerRetry);
+    timerRetry = setTimeout(tentarConectar, ms);
+}
+
+async function tentarConectar() {
+    if (conectando) return;
+    conectando = true;
+
+    try {
+        const h = await descobrirESP();
+
+        if (!chartPronto) {
+            chartPronto = await garantirChartJs();
+            if (chartPronto) {
+                mostrarModo(modoAtual);
+            }
+        }
+
+        if (h) {
+            if (!chartPronto) {
+                mostrarAviso("⚠️ Não consegui carregar o Chart.js (sem internet e sem o arquivo no ESP). " +
+                    "Envie <b>chart.umd.min.js</b> pelo painel ☰ → Upload Remoto. Os valores numéricos continuam funcionando.", "");
+            } else {
+                limparAviso();
+            }
+            conectarWS();
+        } else {
+            if (location.protocol !== "https:") {
+                mostrarAviso("🔎 ESP32 não encontrado. Confira se você está no mesmo Wi-Fi dele (ou na rede <b>Medidor do PET</b>) " +
+                    "e, se preciso, informe o endereço em ☰ → Conexão. Tentando de novo...", "info");
+                document.getElementById("espEndereco").innerHTML = "📡 não encontrado";
+                agendarRetry(5000);
+            }
+        }
+    } finally {
+        conectando = false;
+    }
+}
+
+function marcarOnline() {
+    document.getElementById("wsStatus").innerHTML = "🟢 WebSocket";
+    document.getElementById("wsStatus").className = "status online";
+    document.getElementById("wifiStatus").innerHTML = "🟢 Wi-Fi";
+    document.getElementById("wifiStatus").className = "status online";
+}
+
+function marcarOffline() {
+    document.getElementById("wsStatus").innerHTML = "🔴 WebSocket";
+    document.getElementById("wsStatus").className = "status offline";
+    document.getElementById("wifiStatus").innerHTML = "🔴 Wi-Fi";
+    document.getElementById("wifiStatus").className = "status offline";
+}
+
+function conectarWS() {
+    if (ws) {
+        ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
+        try { ws.close(); } catch (e) {}
+        ws = null;
+    }
+
+    try {
+        ws = new WebSocket("ws://" + espHost + ":81/");
+    } catch (e) {
+        marcarOffline();
+        agendarRetry(3000);
+        return;
+    }
+
+    ws.onopen = function () {
+        wsConectado = true;
+        marcarOnline();
+        atualizarStatus();
+        atualizarSPIFFS();
+        atualizarArquivos();
+    };
+
+    ws.onclose = function () {
+        wsConectado = false;
+        marcarOffline();
+        agendarRetry(2000);   // procura o ESP de novo (o endereço pode ter mudado)
+    };
+
+    ws.onerror = function () {
+        try { ws.close(); } catch (e) {}
+    };
+
+    ws.onmessage = function (event) {
+        try {
+            const obj = JSON.parse(event.data);
+            const V = parseFloat(obj.tensao);
+            const I = parseFloat(obj.corrente);
+            const P = parseFloat(obj.potencia);
+            const S = parseFloat(obj.potenciaAparente);
+            const FP = parseFloat(obj.fp);
+            let C = parseFloat(obj.consumo);
+            if (isNaN(C)) C = null;
+
+            document.getElementById("valores").innerHTML =
+                "V: " + V.toFixed(2) + " V | I: " + I.toFixed(2) + " A | P: " + P.toFixed(2) +
+                " W | S: " + S.toFixed(2) + " VA | FP: " + FP.toFixed(3);
+
+            document.getElementById("consumoDisplay").innerHTML =
+                "Consumo Acumulado: " + (C === null ? "---" : C.toFixed(5)) + " kWh";
+
+            document.getElementById("fpValor").innerText = FP.toFixed(3);
+
+            adicionarPonto(V, I, P, S, C);
+        } catch (e) {
+            console.error("Erro ao processar dados do WebSocket:", e);
+        }
+    };
+}
+
+/*==========================================================
+    PAINEL DE CONFIGURAÇÕES
+==========================================================*/
+
+function togglePainelConfig(abrir) {
+    const painel = document.getElementById("painelConfig");
+    if (abrir) {
+        painel.classList.add("aberto");
+        document.getElementById("hostInput").value = espHost || lerHostSalvo();
+        if (wsConectado) carregarValoresConfig();
+    } else {
+        painel.classList.remove("aberto");
+    }
+}
+
+function salvarHostManual() {
+    const h = normalizarHost(document.getElementById("hostInput").value);
+    if (!h) {
+        alert("Digite um endereço (ex: 192.168.0.50 ou green.local).");
+        return;
+    }
+    salvarHost(h);
+    marcarOffline();
+    wsConectado = false;
+    mostrarAviso("🔎 Testando " + h + "...", "info");
+    agendarRetry(0);
+}
+
+function buscarAutomatico() {
+    salvarHost("");
+    marcarOffline();
+    wsConectado = false;
+    mostrarAviso("🔎 Procurando o ESP32...", "info");
+    agendarRetry(0);
+}
+
+function carregarValoresConfig() {
+    api("/getConfig")
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            document.getElementById("htmlPadraoNome").value = data.htmlPadrao || "Jarvis.html";
+            document.getElementById("calValor").value = data.cal !== undefined ? data.cal : 3;
+
+            document.getElementById("coefA_VAC_Input").value = data.coefA_VAC !== undefined ? data.coefA_VAC : 1.0;
+            document.getElementById("coefB_VAC_Input").value = data.coefB_VAC !== undefined ? data.coefB_VAC : 0.0;
+            document.getElementById("coefA_IAC_Input").value = data.coefA_IAC !== undefined ? data.coefA_IAC : 1.0;
+            document.getElementById("coefB_IAC_Input").value = data.coefB_IAC !== undefined ? data.coefB_IAC : 0.0;
+        })
+        .catch(function () { console.log("Erro ao carregar configurações do ESP"); });
+}
+
+function fazerUploadHtml() {
+    const input = document.getElementById("arquivoHtmlInput");
+    if (input.files.length === 0) {
+        alert("Selecione um arquivo primeiro!");
+        return;
+    }
+    const arquivo = input.files[0];
+    const formData = new FormData();
+    formData.append("data", arquivo, "/" + arquivo.name);
+
+    alert("Enviando arquivo... Aguarde a confirmação.");
+    api("/upload", { method: "POST", body: formData }, 60000)
+        .then(function (r) { return r.text(); })
+        .then(function (txt) {
+            alert("Upload concluído: " + txt);
+            atualizarArquivos();
+            atualizarSPIFFS();
+        })
+        .catch(function (e) { alert("Falha no upload do arquivo: " + e.message); });
+}
+
+function salvarNomeHtmlPadrao() {
+    const nome = document.getElementById("htmlPadraoNome").value.trim();
+    if (!nome) return;
+    enviarComando("/setHtmlPadrao?nome=" + encodeURIComponent(nome));
+}
+
+function salvarCalibracao() {
+    const cal = document.getElementById("calValor").value;
+    enviarComando("/setCal?valor=" + encodeURIComponent(cal));
+}
+
+function salvarFatoresCorrecao() {
+    const ids = ["coefA_VAC_Input", "coefB_VAC_Input", "coefA_IAC_Input", "coefB_IAC_Input"];
+    const v = ids.map(function (id) { return document.getElementById(id).value.trim(); });
+
+    // Campo vazio viraria 0 no ESP e zeraria as medições
+    if (v.some(function (x) { return x === "" || !isFinite(Number(x)); })) {
+        alert("Preencha os quatro coeficientes com números válidos.");
+        return;
+    }
+    if (Number(v[0]) === 0 || Number(v[2]) === 0) {
+        if (!confirm("Um dos ganhos (A) está em zero: as medições vão zerar. Continuar mesmo assim?")) return;
+    }
+
+    enviarComando("/setCorrecao?a_vac=" + encodeURIComponent(v[0]) + "&b_vac=" + encodeURIComponent(v[1]) +
+        "&a_iac=" + encodeURIComponent(v[2]) + "&b_iac=" + encodeURIComponent(v[3]));
+}
+
+/*==========================================================
+    GRÁFICOS
+==========================================================*/
+
+function limparGraficos() {
+    dadosGrafico.labels.length = 0;
+    dadosGrafico.tensao.length = 0;
+    dadosGrafico.corrente.length = 0;
+    dadosGrafico.potencia.length = 0;
+    dadosGrafico.potenciaAparente.length = 0;
+    dadosGrafico.consumo.length = 0;
+    atualizarGraficos();
+}
+
+document.getElementById("maxPontos").addEventListener("change", function () {
+    limitePontos = parseInt(this.value);
+    cortarExcessoPontos();
+    atualizarGraficos();
+});
+
+function cortarExcessoPontos() {
+    while (dadosGrafico.labels.length > limitePontos) {
+        dadosGrafico.labels.shift();
+        dadosGrafico.tensao.shift();
+        dadosGrafico.corrente.shift();
+        dadosGrafico.potencia.shift();
+        dadosGrafico.potenciaAparente.shift();
+        dadosGrafico.consumo.shift();
+    }
+}
+
+document.getElementById("modoVisualizacao").addEventListener("change", function () {
+    modoAtual = parseInt(this.value);
+    mostrarModo(modoAtual);
+});
+
+function destruirGraficos() {
+    charts.forEach(function (c) { c.destroy(); });
+    charts = [];
+}
+
+function datasetPadrao(titulo, dados, cor) {
+    return {
+        label: titulo,
+        data: dados,
+        borderColor: cor,
+        backgroundColor: cor,
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.15,
+        fill: false
+    };
+}
+
+function opcoesPadrao() {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { intersect: false, mode: "index" },
+        plugins: { legend: { display: true, labels: { boxWidth: 12 } } },
+        scales: {
+            x: { grid: { color: "rgba(0,0,0,0.08)" } },
+            y: { beginAtZero: false, grid: { color: "rgba(0,0,0,0.08)" } }
+        }
+    };
+}
+
+function criarGrafico(canvasId, datasets) {
+    const c = new Chart(document.getElementById(canvasId), {
+        type: "line",
+        data: { labels: dadosGrafico.labels, datasets: datasets },
+        options: opcoesPadrao()
+    });
+    charts.push(c);
+}
+
+function mostrarModo(modo) {
+    document.querySelectorAll(".modo-wrapper").forEach(function (el) { el.style.display = "none"; });
+    destruirGraficos();
+
+    if (typeof Chart === "undefined") return;   // será chamado de novo quando o Chart.js carregar
+
+    document.getElementById("modo" + modo).style.display = DISPLAY_MODO[modo];
+
+    if (modo === 1) {
+        criarGrafico("graficoPrincipal", [
+            datasetPadrao(SERIES.potencia.nome, dadosGrafico.potencia, SERIES.potencia.cor),
+            datasetPadrao(SERIES.potenciaAparente.nome, dadosGrafico.potenciaAparente, SERIES.potenciaAparente.cor),
+            datasetPadrao(SERIES.corrente.nome, dadosGrafico.corrente, SERIES.corrente.cor),
+            datasetPadrao(SERIES.tensao.nome, dadosGrafico.tensao, SERIES.tensao.cor)
+        ]);
+    } else {
+        LAYOUTS[modo].forEach(function (item) {
+            const serie = SERIES[item[1]];
+            criarGrafico(item[0], [datasetPadrao(serie.nome, dadosGrafico[item[1]], serie.cor)]);
+        });
+    }
+
+    atualizarGraficos();
+}
+
+function atualizarGraficos() {
+    charts.forEach(function (c) { c.update("none"); });
+}
+
+function adicionarPonto(v, i, p, S, consumo) {
+    const agora = new Date();
+    const horario =
+        agora.getHours().toString().padStart(2, "0") + ":" +
+        agora.getMinutes().toString().padStart(2, "0") + ":" +
+        agora.getSeconds().toString().padStart(2, "0");
+
+    // Se o consumo caiu (reset pelo botão do site, pelo LCD ou ao iniciar gravação),
+    // apaga só o trecho antigo da curva, mantendo todas as séries alinhadas com o eixo X.
+    const c = dadosGrafico.consumo;
+    const ultimo = c.length ? c[c.length - 1] : null;
+    if (consumo !== null && ultimo !== null && consumo < ultimo - 0.0001) {
+        c.fill(null);
+    }
+
+    dadosGrafico.labels.push(horario);
+    dadosGrafico.tensao.push(v);
+    dadosGrafico.corrente.push(i);
+    dadosGrafico.potencia.push(p);
+    dadosGrafico.potenciaAparente.push(S);
+    dadosGrafico.consumo.push(consumo);
+
+    cortarExcessoPontos();
+    atualizarGraficos();
+}
+
+/*==========================================================
+    COMANDOS DO ESP32
+==========================================================*/
+
+function resetarConsumoWeb() {
+    if (!wsConectado) return;
+    api("/resetConsumo")
+        .then(function (r) { return r.text(); })
+        .then(function () {
+            dadosGrafico.consumo.fill(null);   // mantém alinhamento com o eixo X
+            atualizarGraficos();
+        })
+        .catch(function (e) { alert("Falha ao resetar o consumo: " + e.message); });
+}
+
+function atualizarBotaoRec() {
+    const b = document.getElementById("recBtn");
+    const s = document.getElementById("recStatus");
+    b.innerHTML = gravando ? "Parar Gravação" : "Iniciar Gravação";
+    b.className = gravando ? "stop" : "start";
+    s.innerHTML = gravando ? "🔴 REC" : "⚪ Parado";
+    s.className = gravando ? "status rec" : "status";
+}
+
+function toggleRec() {
+    if (!wsConectado) return;
+    const iniciar = !gravando;
+
+    api(iniciar ? "/start" : "/stop")
+        .then(function (r) { return r.text(); })
+        .then(function () {
+            gravando = iniciar;
+            atualizarBotaoRec();
+            setTimeout(atualizarArquivos, 800);
+        })
+        .catch(function (e) { alert("Falha ao enviar o comando: " + e.message); });
+}
+
+function formatarSPIFFS() {
+    if (!wsConectado) return;
+    if (!confirm("Deseja realmente formatar o SPIFFS? (os arquivos HTML e o chart.umd.min.js são preservados)")) return;
+    api("/formatar")
+        .then(function (r) { return r.text(); })
+        .then(function (txt) {
+            alert(txt);
+            setTimeout(function () { atualizarArquivos(); atualizarSPIFFS(); }, 1500);
+        })
+        .catch(function (e) { alert("Falha ao formatar: " + e.message); });
+}
+
+function atualizarArquivos() {
+    api("/folder?name=/")
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+            document.getElementById("arquivos").innerHTML = html;
+        })
+        .catch(function () {
+            document.getElementById("arquivos").innerHTML = "<p style='color:#ff4444; font-size:12px;'>Dispositivo offline</p>";
+        });
+}
+
+function atualizarRelogio() {
+    const agora = new Date();
+    document.getElementById("relogio").innerHTML = agora.toLocaleDateString() + "<br>" + agora.toLocaleTimeString();
+}
+
+function atualizarStatus() {
+    if (!wsConectado) return;
+    api("/status")
+        .then(function (r) { return r.json(); })
+        .then(function (obj) {
+            document.getElementById("wifiStatus").innerHTML = obj.wifi ? "🟢 Wi-Fi" : "🔴 Wi-Fi";
+            document.getElementById("wifiStatus").className = obj.wifi ? "status online" : "status offline";
+            atualizarInfoRede(obj);
+
+            // Sincroniza o botão de gravação (ex: gravação iniciada pelo botão do LCD)
+            if (typeof obj.gravando === "boolean" && obj.gravando !== gravando) {
+                gravando = obj.gravando;
+                atualizarBotaoRec();
+                atualizarArquivos();
+            }
+        })
+        .catch(function () {});
+}
+
+function atualizarSPIFFS() {
+    if (!wsConectado) return;
+    api("/spiffs")
+        .then(function (r) { return r.json(); })
+        .then(function (obj) {
+            const mbLivres = obj.livre;
+            const horasDisponiveis = mbLivres / MB_POR_HORA_GRAVANDO;
+            let textoTempo;
+
+            if (horasDisponiveis >= 24) {
+                textoTempo = (horasDisponiveis / 24).toFixed(1) + " dias de rec";
+            } else {
+                textoTempo = horasDisponiveis.toFixed(1) + " h de rec";
+            }
+
+            document.getElementById("spiffs").innerHTML =
+                "SPIFFS<br>" + mbLivres.toFixed(2) + " MB livres<br>" +
+                "<span style='font-size:12px; color:#4CAF50;'>⏱ ~" + textoTempo + "</span>";
+        })
+        .catch(function () {});
+}
+
+/*==========================================================
+    INICIALIZAÇÃO
+==========================================================*/
+
+setInterval(atualizarRelogio, 1000);
+atualizarRelogio();
+
+setInterval(atualizarStatus, 3000);
+setInterval(atualizarSPIFFS, 5000);
+setInterval(function () { if (wsConectado) atualizarArquivos(); }, 15000);
+
+mostrarAviso("🔎 Procurando o ESP32...", "info");
+tentarConectar();
+
+</script>
+
+</body>
+</html>
